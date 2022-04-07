@@ -8,8 +8,9 @@ target
 
 
 # log
+logs/
 *.log*
 
 # resources
-*/resources/*.xml
-logs/
+**/resources/*.xml
+
