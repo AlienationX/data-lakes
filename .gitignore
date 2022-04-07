@@ -11,5 +11,5 @@ target
 *.log*
 
 # resources
-*resources/*.xml
+*/resources/*.xml
 logs/
