@@ -1,4 +1,4 @@
-package com.art.hudi
+package com.art.spark.hudi
 
 object HudiDemoWithScala {
 

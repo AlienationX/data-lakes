@@ -74,7 +74,7 @@ public class WordCountSQL {
 
         String catalogName     = "myhive";
         String defaultDatabase = "default";
-        String hiveConfDir     = "\\Codes\\Java\\datalakes\\hudi-lastest\\src\\main\\resources";  // 集群路径/etc/hive/conf，如何使用resources目录下的配置文件?
+        String hiveConfDir     = "\\Codes\\Java\\datalakes\\hudi-by-flink\\src\\main\\resources";  // 集群路径/etc/hive/conf，如何使用resources目录下的配置文件?
         String hiveVersion     = "1.1.0";
 
         HiveCatalog hive = new HiveCatalog(catalogName, defaultDatabase, hiveConfDir);

@@ -24,7 +24,7 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <hadoop.version>1.6.0-cdh5.16.2</hadoop.version>
-        <spark.version>2.4.7</spark.version>  <!-- 2.4.7, 2.4.0.cloudera2 -->
+        <spark.version>2.4.0.cloudera2</spark.version>  <!-- 2.4.7, 2.4.0.cloudera2 -->
         <hudi.version>0.10.1</hudi.version>  <!-- 0.10.1 -->
         <flink.version>1.13.6</flink.version>  <!-- 1.12.2, 1.12.7, 1.13.6 -->
         <flink.blink.version>1.13.6</flink.blink.version>
@@ -54,16 +54,16 @@
 
         <!-- TODO 切记 hudi-spark-bundle 和 hudi-flink-bundle 一起引入，否则 org.apache.hudi.util.DataTypeUtils 文件会冲突，可以通过引入顺序和shade解决-->
         <!-- DataLakes Apache Hudi-->
-        <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-spark-bundle -->
-        <dependency>
-            <groupId>org.apache.hudi</groupId>
-            <artifactId>hudi-spark-bundle_2.11</artifactId>
-            <version>${hudi.version}</version>
-        </dependency>
         <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-flink-bundle -->
         <dependency>
             <groupId>org.apache.hudi</groupId>
             <artifactId>hudi-flink-bundle_2.11</artifactId>
+            <version>${hudi.version}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-spark-bundle-->
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-spark-bundle_2.11</artifactId>
             <version>${hudi.version}</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-hadoop-mr-bundle -->
@@ -72,7 +72,6 @@
             <artifactId>hudi-hadoop-mr-bundle</artifactId>
             <version>${hudi.version}</version>
         </dependency>
-
 
         <!--&lt;!&ndash; https://mvnrepository.com/artifact/org.apache.flink/flink-shaded-guava &ndash;&gt;-->
         <!--<dependency>-->
@@ -295,47 +294,6 @@
                 <plugin>
                     <artifactId>maven-project-info-reports-plugin</artifactId>
                     <version>3.0.0</version>
-                </plugin>
-
-                <plugin>
-                    <artifactId>maven-shade-plugin</artifactId>
-                    <configuration>
-                        <createDependencyReducedPom>false</createDependencyReducedPom>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <phase>package</phase>
-                            <goals>
-                                <goal>shade</goal>
-                            </goals>
-                            <configuration>
-                                <!-- 必须添加filters，否则报错 java.lang.SecurityException: Invalid signature file digest for Manifest main attributes -->
-                                <filters>
-                                    <filter>
-                                        <artifact>*:*</artifact>
-                                        <excludes>
-                                            <exclude>META-INF/*.SF</exclude>
-                                            <exclude>META-INF/*.DSA</exclude>
-                                            <exclude>META-INF/*.RSA</exclude>
-                                        </excludes>
-                                    </filter>
-                                </filters>
-                                <relocations>
-                                    <!-- 多个包需要替换使用多个relocation-->
-                                    <relocation>
-                                        <!-- 当前版本和集群的版本冲突，将依赖的类重命名并打包进来 （隔离方案） -->
-                                        <!-- pattern 源类名 shadedPattern 重命名 excludes 排除的类名 -->
-                                        <pattern>org.apache.hudi.util</pattern>
-                                        <shadedPattern>shaded.org.apache.http</shadedPattern>
-                                        <!--<excludes>-->
-                                        <!--    <exclude>org.codehaus.plexus.util.xml.Xpp3Dom</exclude>-->
-                                        <!--    <exclude>org.codehaus.plexus.util.xml.pull.*</exclude>-->
-                                        <!--</excludes>-->
-                                    </relocation>
-                                </relocations>
-                            </configuration>
-                        </execution>
-                    </executions>
                 </plugin>
 
                 <plugin>

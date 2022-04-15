@@ -1,4 +1,4 @@
-package com.art.hudi;
+package com.art.spark.hudi;
 
 import static org.junit.Assert.assertTrue;
 

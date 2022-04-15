@@ -4,6 +4,12 @@ import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.table.api.EnvironmentSettings;
 import org.apache.flink.table.api.bridge.java.StreamTableEnvironment;
 
+/**
+ * 1.多少个表就会产生多少个会话，可以通过 show processlist 查看，表太多会影响服务器性能
+ * 2.任务意外停止如何检查点恢复？
+ * 3.中途增加表如何解决？
+ * 4.元数据可以保存在hive中，但是通过 show create table 可以查看到password，授权限制？
+ */
 public class SaveToMysqlWithJoin {
 
     public static void main(String[] args) throws Exception {

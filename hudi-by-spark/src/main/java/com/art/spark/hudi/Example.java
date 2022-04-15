@@ -1,5 +1,6 @@
-package com.art.hudi;
+package com.art.spark.hudi;
 
+import org.apache.hudi.DataSourceReadOptions;
 import org.apache.hudi.DataSourceWriteOptions;
 import org.apache.hudi.config.HoodieWriteConfig;
 import org.apache.spark.sql.Dataset;
@@ -25,46 +26,63 @@ public class Example {
         spark.sql("show databases").show();
 
         // 插入, double类型目前会报错，还未解决
-        Dataset<Row> data = spark.sql("" +
+        Dataset<Row> data1 = spark.sql("" +
                 "select 1 as id, 'aaa' as name, 55 as price, 'I' as flag, '2020-01-01' as update_date union all " +
                 "select 2 as id, 'bbb' as name, 55 as price, 'I' as flag, '2020-01-01' as update_date union all " +
                 "select 3 as id, 'ccc' as name, 55 as price, 'I' as flag, '2020-01-01' as update_date"
         );
-        data.show();
+        data1.show();
         String basePath = "/user/work/tmp/tables/";
         String tableName = "h1";
         // java.lang.NoSuchFieldError: NULL_VALUE 版本问题，高版本需要spark2.4.3+
-        data.write()
+        data1.write()
                 .format("hudi")
-                .option(DataSourceWriteOptions.OPERATION().key(), DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL())  // 设置写入方式
+                .option(DataSourceWriteOptions.OPERATION().key(), DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL())  // 设置写入方式
                 .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL())   // 设置表类型
                 .option(DataSourceWriteOptions.RECORDKEY_FIELD().key(), "id")  // 设置主键
                 .option(DataSourceWriteOptions.PRECOMBINE_FIELD().key(), "update_date")  // 设置???
-                .option(HoodieWriteConfig.TBL_NAME.key(), tableName)  // 设置表名
+                .option(DataSourceWriteOptions.HIVE_STYLE_PARTITIONING().key(), "true")  // 使用hive分区的样式，类似 dt=2019-12-31
                 .option("hoodie.upsert.shuffle.parallelism", "2")  // 设置并行数
+                .option(HoodieWriteConfig.TBL_NAME.key(), tableName)  // 设置表名
                 .mode(SaveMode.Overwrite)
                 .save(basePath + tableName);
 
         // 更新
-        Dataset<Row> data1 = spark.sql("" +
+        Dataset<Row> data2 = spark.sql("" +
                 "select 2 as id, 'bbb' as name, 99  as price, 'U' as flag, '2020-01-01' as update_date union all " +
                 "select 4 as id, 'ddd' as name, 100 as price, 'I' as flag, '2020-01-01' as update_date union all " +
                 "select 9 as id, 'zzz' as name, -99 as price, 'D' as flag, '2020-01-01' as update_date"
         );
-        data1.write()
+        data2.write()
                 .format("hudi")  // 高版本使用hudi也可
                 .option(DataSourceWriteOptions.OPERATION().key(), DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL())  // 设置写入方式
                 .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL())   // 设置表类型
                 .option(DataSourceWriteOptions.RECORDKEY_FIELD().key(), "id")  // 设置主键
                 .option(DataSourceWriteOptions.PRECOMBINE_FIELD().key(), "update_date")  // 设置???
+                .option(DataSourceWriteOptions.HIVE_STYLE_PARTITIONING().key(), "true")
                 .option(HoodieWriteConfig.TBL_NAME.key(), tableName)  // 设置表名
                 .option("hoodie.upsert.shuffle.parallelism", "2")  // 设置并行数
                 .mode(SaveMode.Append)
                 .save(basePath + tableName);
 
-        // 删除
+        // 删除 只需要 primary key 的数据即可
+        Dataset<Row> data3 = spark.sql("" +
+                "select 9 as id union all " +
+                "select 10 as id"
+        );
+        data3.write()
+                .format("hudi")  // 高版本使用hudi也可
+                .option(DataSourceWriteOptions.OPERATION().key(), DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL())  // 设置写入方式
+                .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL())   // 设置表类型
+                .option(DataSourceWriteOptions.RECORDKEY_FIELD().key(), "id")  // 设置主键
+                .option(DataSourceWriteOptions.PRECOMBINE_FIELD().key(), "update_date")
+                .option(DataSourceWriteOptions.HIVE_STYLE_PARTITIONING().key(), "true")
+                .option(HoodieWriteConfig.TBL_NAME.key(), tableName)  // 设置表名
+                .option("hoodie.upsert.shuffle.parallelism", "2")  // 设置并行数
+                .mode(SaveMode.Append)
+                .save(basePath + tableName);
 
-        Dataset<Row> h1 = spark.read().format("org.apache.hudi").load(basePath + tableName + "/*");
+        Dataset<Row> h1 = spark.read().format("org.apache.hudi").load(basePath + tableName);
         h1.show();
         h1.createOrReplaceTempView("h1");
         spark.sql("select t.*, current_timestamp() as dt from h1 t").show();
@@ -93,13 +111,13 @@ public class Example {
 
         // sql1 建表语句通过，但是创建外部表需要权限 MetaException(message:User work does not have privileges for CREATETABLE);
         String sql1 = "-- create a managed cow table\n"
-                      + "create table if not exists h1 (\n"
+                      + "create table if not exists h1_bak (\n"
                       + "  id int, \n"
                       + "  name string, \n"
                       + "  price double\n"
                       + ") using hudi\n"
-                      // + "location '/user/work/tmp/tables/h1'\n"
-                      + "location '/tmp/external/h1'\n"
+                      + "location '/user/work/tmp/tables/h1'\n"
+                      // + "location '/tmp/external/h1'\n"
                       + "options (\n"
                       + "  type = 'cow',\n"
                       + "  primaryKey = 'id'\n"
@@ -109,7 +127,7 @@ public class Example {
         String sql3 = "create table h3 using hudi location '/user/work/tmp/tables/h3/' options (type = 'cow', primaryKey = 'id') as select 1 as id, 'a1' as name, 10 as price";
         String sql4 = "create table h4 using hudi as select 1 as id, 'a1' as name, 10 as price";
 
-        try { System.out.println(sql1); spark.sql(sql1); System.out.println("++ done.");} catch (Exception e) { e.printStackTrace(); }
+        try { System.out.println(sql1); spark.sql(sql1); } catch (Exception e) { e.printStackTrace(); }
         Thread.sleep(1000);
         try { System.out.println(sql2); spark.sql(sql2); } catch (Exception e) { e.printStackTrace(); }
         Thread.sleep(1000);
@@ -117,8 +135,51 @@ public class Example {
         Thread.sleep(1000);
         try { System.out.println(sql4); spark.sql(sql4); } catch (Exception e) { e.printStackTrace(); }
 
-        spark.sql(sql4);
         spark.sql("show tables").show();
+
+        // Time Travel Query 时间线历史版本查询
+        Dataset<Row> df = spark.sql("select _hoodie_commit_time from h1 group by _hoodie_commit_time order by _hoodie_commit_time desc");
+        df.show();
+        // 删除数据其实是有隐藏的commit time，因为没有数据所以无法查询出来
+        String updateDT = df.takeAsList(2).get(0).getString(0);  // 降序，所以第一行的数据为最大时间
+        String insertDT = df.takeAsList(2).get(1).getString(0);
+        System.out.println("insertDT: " + insertDT + ", updateDT: " + updateDT);
+
+        System.out.println("插入后的数据: ");
+        spark.read()
+                .format("hudi")
+                .option("as.of.instant", insertDT)  // 闭区间（大于等于），包括当前时间戳，注意id为2和4的数据
+                .load(basePath + tableName)
+                .show();
+
+        System.out.println("更新后的数据: ");
+        spark.read()
+                .format("hudi")
+                .option("as.of.instant", updateDT)  // DataSourceReadOptions.TIME_TRAVEL_AS_OF_INSTANT().key()
+                .load(basePath + tableName)
+                .show();
+
+        System.out.println("删除后的数据，也就是最新数据: ");
+        spark.read()
+                .format("hudi")
+                .load(basePath + tableName)
+                .show();
+
+        // Incremental query
+        spark.sql("select * from h1 where _hoodie_commit_time>='" + updateDT + "'").show();  // 当前镜像数据过滤
+        spark.read()
+                .format("hudi")
+                .option(DataSourceReadOptions.QUERY_TYPE().key(), DataSourceReadOptions.QUERY_TYPE_INCREMENTAL_OPT_VAL())  // 不加该参数指示时间过滤查询，增加该参数变成 时间线 查询，同 as.of.instant
+                .option(DataSourceReadOptions.BEGIN_INSTANTTIME().key(), "000")  // Represents all commits > this time.
+                .option(DataSourceReadOptions.END_INSTANTTIME().key(), updateDT)  // beginTime 推荐 000，设置endTime commit时间即可
+                .load(basePath + tableName)
+                .show();
+
+        // test flink cdc insert data
+        spark.read()
+                .format("hudi")
+                .load("/user/work/tmp/tables/hudi_test4")
+                .show();
 
         spark.stop();
     }
