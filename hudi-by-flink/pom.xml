@@ -23,8 +23,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <hadoop.version>1.6.0-cdh5.16.2</hadoop.version>
+        <hadoop.version>2.6.0-cdh5.16.2</hadoop.version>
         <spark.version>2.4.0.cloudera2</spark.version>  <!-- 2.4.7, 2.4.0.cloudera2 -->
+        <jackson.version>2.9.6</jackson.version>
         <hudi.version>0.10.1</hudi.version>  <!-- 0.10.1 -->
         <flink.version>1.13.6</flink.version>  <!-- 1.12.2, 1.12.7, 1.13.6 -->
         <flink.blink.version>1.13.6</flink.blink.version>
@@ -52,26 +53,41 @@
 
     <dependencies>
 
-        <!-- TODO 切记 hudi-spark-bundle 和 hudi-flink-bundle 一起引入，否则 org.apache.hudi.util.DataTypeUtils 文件会冲突，可以通过引入顺序和shade解决-->
+        <!-- TODO 切记 hudi-spark-bundle 和 hudi-flink-bundle 不要一起引入，很多相同路径的class文件冲突。-->
+        <!-- TODO 比如 org.apache.hudi.util.DataTypeUtils 文件会冲突。如何将整个jar包 shade？ 而不是通过 pattern 包路径？ -->
         <!-- DataLakes Apache Hudi-->
         <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-flink-bundle -->
         <dependency>
             <groupId>org.apache.hudi</groupId>
             <artifactId>hudi-flink-bundle_2.11</artifactId>
             <version>${hudi.version}</version>
+            <!--<exclusions>-->
+            <!--    <exclusion>-->
+            <!--        <groupId>org.apache.hudi.util</groupId>-->
+            <!--        <artifactId>*</artifactId>-->
+            <!--    </exclusion>-->
+            <!--</exclusions>-->
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-flink-client -->
+        <dependency>
+            <groupId>org.apache.hudi</groupId>
+            <artifactId>hudi-flink-client</artifactId>
+            <version>${hudi.version}</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-spark-bundle-->
-        <dependency>
-            <groupId>org.apache.hudi</groupId>
-            <artifactId>hudi-spark-bundle_2.11</artifactId>
-            <version>${hudi.version}</version>
-        </dependency>
+        <!--<dependency>-->
+        <!--    <groupId>org.apache.hudi</groupId>-->
+        <!--    <artifactId>hudi-spark-bundle_2.11</artifactId>-->
+        <!--    <version>${hudi.version}</version>-->
+        <!--</dependency>-->
+
+        <!-- hive集成hudi需要的jar包 -->
         <!-- https://mvnrepository.com/artifact/org.apache.hudi/hudi-hadoop-mr-bundle -->
-        <dependency>
-            <groupId>org.apache.hudi</groupId>
-            <artifactId>hudi-hadoop-mr-bundle</artifactId>
-            <version>${hudi.version}</version>
-        </dependency>
+        <!--<dependency>-->
+        <!--    <groupId>org.apache.hudi</groupId>-->
+        <!--    <artifactId>hudi-hadoop-mr-bundle</artifactId>-->
+        <!--    <version>${hudi.version}</version>-->
+        <!--</dependency>-->
 
         <!--&lt;!&ndash; https://mvnrepository.com/artifact/org.apache.flink/flink-shaded-guava &ndash;&gt;-->
         <!--<dependency>-->
@@ -152,12 +168,12 @@
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.apache.flink/flink-shaded-hadoop-2 -->
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-shaded-hadoop-2-uber</artifactId>
-            <version>2.6.5-10.0</version>
-            <scope>${scope.value}</scope>
-        </dependency>
+        <!--<dependency>-->
+        <!--    <groupId>org.apache.flink</groupId>-->
+        <!--    <artifactId>flink-shaded-hadoop-2-uber</artifactId>-->
+        <!--    <version>2.6.5-10.0</version>-->
+        <!--    <scope>${scope.value}</scope>-->
+        <!--</dependency>-->
 
         <!-- https://mvnrepository.com/artifact/com.ververica/flink-connector-mysql-cdc -->
         <dependency>
@@ -228,19 +244,19 @@
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-core</artifactId>
-            <version>2.10.5</version>
+            <version>${jackson.version}</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-databind -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.10.5</version>
+            <version>${jackson.version}</version>
         </dependency>
         <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-annotations -->
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-annotations</artifactId>
-            <version>2.10.5</version>
+            <version>${jackson.version}</version>
         </dependency>
 
         <!--&lt;!&ndash; https://mvnrepository.com/artifact/org.apache.hive/hive-exec &ndash;&gt;-->
@@ -256,46 +272,6 @@
     <build>
         <pluginManagement><!-- lock down plugins versions to avoid using Maven defaults (may be moved to parent pom) -->
             <plugins>
-                <!-- clean lifecycle, see https://maven.apache.org/ref/current/maven-core/lifecycles.html#clean_Lifecycle -->
-                <plugin>
-                    <artifactId>maven-clean-plugin</artifactId>
-                    <version>3.1.0</version>
-                </plugin>
-                <!-- default lifecycle, jar packaging: see https://maven.apache.org/ref/current/maven-core/default-bindings.html#Plugin_bindings_for_jar_packaging -->
-                <plugin>
-                    <artifactId>maven-resources-plugin</artifactId>
-                    <version>3.0.2</version>
-                </plugin>
-                <plugin>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.8.0</version>
-                </plugin>
-                <plugin>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>2.22.1</version>
-                </plugin>
-                <plugin>
-                    <artifactId>maven-jar-plugin</artifactId>
-                    <version>3.0.2</version>
-                </plugin>
-                <plugin>
-                    <artifactId>maven-install-plugin</artifactId>
-                    <version>2.5.2</version>
-                </plugin>
-                <plugin>
-                    <artifactId>maven-deploy-plugin</artifactId>
-                    <version>2.8.2</version>
-                </plugin>
-                <!-- site lifecycle, see https://maven.apache.org/ref/current/maven-core/lifecycles.html#site_Lifecycle -->
-                <plugin>
-                    <artifactId>maven-site-plugin</artifactId>
-                    <version>3.7.1</version>
-                </plugin>
-                <plugin>
-                    <artifactId>maven-project-info-reports-plugin</artifactId>
-                    <version>3.0.0</version>
-                </plugin>
-
                 <plugin>
                     <artifactId>maven-assembly-plugin</artifactId>
                     <configuration>
@@ -304,7 +280,6 @@
                         </descriptorRefs>
                     </configuration>
                 </plugin>
-
             </plugins>
         </pluginManagement>
     </build>

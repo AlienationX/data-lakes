@@ -18,12 +18,14 @@ public class Example {
                 .master("local")
                 .appName("hudi example")
                 .config("spark.some.config.option", "some-value")
-                .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")  // 使用hudi必须设置
-                .config("spark.sql.hive.convertMetastoreParquet", "false") // Uses Hive SerDe, this is mandatory for MoR tables
+                .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+                .config("spark.sql.extensions", "org.apache.spark.sql.hudi.HoodieSparkSessionExtension")
+                // .config("spark.sql.hive.convertMetastoreParquet", "false")  // Uses Hive SerDe, this is mandatory for MoR tables
                 // .enableHiveSupport()
                 .getOrCreate();
 
         spark.sql("show databases").show();
+        spark.sql("show tables").show();
 
         // 插入, double类型目前会报错，还未解决
         Dataset<Row> data1 = spark.sql("" +
@@ -38,9 +40,9 @@ public class Example {
         data1.write()
                 .format("hudi")
                 .option(DataSourceWriteOptions.OPERATION().key(), DataSourceWriteOptions.INSERT_OPERATION_OPT_VAL())  // 设置写入方式
-                .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL())   // 设置表类型
+                .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.COW_TABLE_TYPE_OPT_VAL())   // 设置表类型
                 .option(DataSourceWriteOptions.RECORDKEY_FIELD().key(), "id")  // 设置主键
-                .option(DataSourceWriteOptions.PRECOMBINE_FIELD().key(), "update_date")  // 设置???
+                .option(DataSourceWriteOptions.PRECOMBINE_FIELD().key(), "update_date")  //
                 .option(DataSourceWriteOptions.HIVE_STYLE_PARTITIONING().key(), "true")  // 使用hive分区的样式，类似 dt=2019-12-31
                 .option("hoodie.upsert.shuffle.parallelism", "2")  // 设置并行数
                 .option(HoodieWriteConfig.TBL_NAME.key(), tableName)  // 设置表名
@@ -56,7 +58,7 @@ public class Example {
         data2.write()
                 .format("hudi")  // 高版本使用hudi也可
                 .option(DataSourceWriteOptions.OPERATION().key(), DataSourceWriteOptions.UPSERT_OPERATION_OPT_VAL())  // 设置写入方式
-                .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL())   // 设置表类型
+                .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.COW_TABLE_TYPE_OPT_VAL())   // 设置表类型
                 .option(DataSourceWriteOptions.RECORDKEY_FIELD().key(), "id")  // 设置主键
                 .option(DataSourceWriteOptions.PRECOMBINE_FIELD().key(), "update_date")  // 设置???
                 .option(DataSourceWriteOptions.HIVE_STYLE_PARTITIONING().key(), "true")
@@ -73,7 +75,7 @@ public class Example {
         data3.write()
                 .format("hudi")  // 高版本使用hudi也可
                 .option(DataSourceWriteOptions.OPERATION().key(), DataSourceWriteOptions.DELETE_OPERATION_OPT_VAL())  // 设置写入方式
-                .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.MOR_TABLE_TYPE_OPT_VAL())   // 设置表类型
+                .option(DataSourceWriteOptions.TABLE_TYPE().key(), DataSourceWriteOptions.COW_TABLE_TYPE_OPT_VAL())   // 设置表类型
                 .option(DataSourceWriteOptions.RECORDKEY_FIELD().key(), "id")  // 设置主键
                 .option(DataSourceWriteOptions.PRECOMBINE_FIELD().key(), "update_date")
                 .option(DataSourceWriteOptions.HIVE_STYLE_PARTITIONING().key(), "true")
@@ -82,7 +84,7 @@ public class Example {
                 .mode(SaveMode.Append)
                 .save(basePath + tableName);
 
-        Dataset<Row> h1 = spark.read().format("org.apache.hudi").load(basePath + tableName);
+        Dataset<Row> h1 = spark.read().format("hudi").load(basePath + tableName);
         h1.show();
         h1.createOrReplaceTempView("h1");
         spark.sql("select t.*, current_timestamp() as dt from h1 t").show();
@@ -109,31 +111,65 @@ public class Example {
          * partitioned by (dt, hh);
          */
 
-        // sql1 建表语句通过，但是创建外部表需要权限 MetaException(message:User work does not have privileges for CREATETABLE);
-        String sql1 = "-- create a managed cow table\n"
-                      + "create table if not exists h1_bak (\n"
-                      + "  id int, \n"
-                      + "  name string, \n"
-                      + "  price double\n"
-                      + ") using hudi\n"
-                      + "location '/user/work/tmp/tables/h1'\n"
-                      // + "location '/tmp/external/h1'\n"
-                      + "options (\n"
-                      + "  type = 'cow',\n"
-                      + "  primaryKey = 'id'\n"
-                      + ")";
-        // org.apache.hudi.exception.HoodieException: 'hoodie.table.name', 'path' must be set.
-        String sql2 = "create table h2 using hudi\n" + "options (type = 'cow', primaryKey = 'id')\n" + "partitioned by (dt)\n" + "as\n" + "select 1 as id, 'a1' as name, 10 as price, 1000 as dt";
-        String sql3 = "create table h3 using hudi location '/user/work/tmp/tables/h3/' options (type = 'cow', primaryKey = 'id') as select 1 as id, 'a1' as name, 10 as price";
-        String sql4 = "create table h4 using hudi as select 1 as id, 'a1' as name, 10 as price";
+        // spark必须2.4.3以上（2.4.0会报错）
+        // 创建已存在的表不需要指定字段和option等schema信息，会自动读取指定路径数据和metadata数据。（如果指定了和读取的metadata不一致还会报错）
+        // 执行sql1相当于把h1的元数据的表名修改为h1_bak，造成路径表名和元数据表名不一致，会报错。HoodieException: Config conflict(key	current value	existing value): hoodie.table.name:	h1	h1_bak
+        String sql1 = "-- create a managed cow table\n" +
+                      "create table if not exists h1 \n" +
+                      "using hudi\n" +
+                      "location '/user/work/tmp/tables/h1'\n";
+        // location不指定的默认使用hive配置的warehouse路径/user/hive/warehouse，(应该也是外部表)。
+        // java.lang.AssertionError: assertion failed: Path 'hdfs://hadoop-prod01:8020/user/hive/warehouse/h2' should be empty for CTAS
+        String sql2 = "create table if not exists h2\n" +
+                      "using hudi\n" +
+                      "tblproperties (type = 'cow', primaryKey = 'id', preCombineField = 'ts')\n" +
+                      "partitioned by (dt)\n" +
+                      "as\n" +
+                      "select 1 as id, 'a1' as name, 10 as price, 1000 as ts, '2021-12-01' as dt";
+        // 默认值如果不存在的话必须指定，否则报错
+        // default type='cow'
+        // default primaryKey='uuid'
+        // default preCombineField='ts'
+        // default partition='partitionpath'
+        String sql3 = "create table if not exists h3 using hudi\n" +
+                      "tblproperties (\n" +
+                      "  primaryKey = 'id'\n" +  // 必须指定主键
+                      ")\n" +
+                      "as\n" +
+                      "select 1 as id, 'a1' as name, 10 as price, 1000 as dt";
 
-        try { System.out.println(sql1); spark.sql(sql1); } catch (Exception e) { e.printStackTrace(); }
-        Thread.sleep(1000);
-        try { System.out.println(sql2); spark.sql(sql2); } catch (Exception e) { e.printStackTrace(); }
-        Thread.sleep(1000);
-        try { System.out.println(sql3); spark.sql(sql3); } catch (Exception e) { e.printStackTrace(); }
-        Thread.sleep(1000);
-        try { System.out.println(sql4); spark.sql(sql4); } catch (Exception e) { e.printStackTrace(); }
+        String sql4 = "create table if not exists hudi_cow_pt_tbl (\n" +
+                      "  id bigint,\n" +
+                      "  name string,\n" +
+                      "  ts bigint,\n" +
+                      "  dt string,\n" +
+                      "  hh string\n" +
+                      ") using hudi\n" +
+                      "tblproperties (\n" +
+                      "  type = 'cow',\n" +
+                      "  primaryKey = 'id',\n" +
+                      "  preCombineField = 'ts'\n" +
+                      " )\n" +
+                      "partitioned by (dt, hh)";
+        String deleteSql40 = "truncate table hudi_cow_pt_tbl";  // 主键重复upsert，所以不需要truncate
+        String insertSql41 = "-- insert dynamic partition\n" +
+                      "insert into hudi_cow_pt_tbl partition (dt, hh)\n" +
+                      "select 1 as id, 'a1' as name, 1000 as ts, '2021-12-09' as dt, '10' as hh";
+        String insertSql42 = "-- insert static partition\n" +
+                             "insert into hudi_cow_pt_tbl partition(dt = '2021-12-09', hh='11') " +
+                             "select 2 as id, 'a2' as name, 1000 as ts union all select 3 as id, 'a3' as name, 1000 as ts";
+        String updateSql43 = "update hudi_cow_pt_tbl set ts=1999 where id=2";
+        String deleteSql44 = "delete from hudi_cow_pt_tbl where id=3";
+
+        spark.sql(sql1);
+        // spark.sql(sql2);
+        // spark.sql(sql3);
+        spark.sql(sql4);
+        spark.sql(insertSql41);
+        spark.sql(insertSql42);
+        spark.sql(updateSql43);
+        spark.sql(deleteSql44);
+        spark.sql("select * from hudi_cow_pt_tbl").show();
 
         spark.sql("show tables").show();
 
@@ -176,10 +212,15 @@ public class Example {
                 .show();
 
         // test flink cdc insert data
+        // spark.read()
+        //         .format("hudi")
+        //         .load("/user/work/tmp/tables/hudi_test4")
+        //         .show();
+        //
         spark.read()
                 .format("hudi")
-                .load("/user/work/tmp/tables/hudi_test4")
-                .show();
+                .load("/user/work/tmp/tables/hudi_mysql_binlog_hive_metastore")
+                .show(100,false);
 
         spark.stop();
     }
